@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Narita Navigator</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Vue.js -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <style>
+        :root{ --muted: #6b7280; }
+        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; color: #0f172a; background-color: #f3efe9; }
+        /* Background: window image at /assets/window-bg.jpg */
+        .page-bg { position: fixed; inset: 0; background-image: url('/assets/window-bg.jpg'); background-size: cover; background-position: center; filter: saturate(0.95) contrast(1); z-index: -2; }
+        .page-overlay { position: fixed; inset: 0; background: linear-gradient(rgba(255,255,255,0.6), rgba(255,250,245,0.6)); z-index: -1; backdrop-filter: blur(2px); }
+        .card { background: rgba(255,255,255,0.92); backdrop-filter: blur(4px); }
+        .pb-20 { padding-bottom: 7rem; }
+        .thumb { width: 64px; height: 48px; object-fit: cover; border-radius: 6px; margin-right: 0.75rem; border: 1px solid rgba(0,0,0,0.06); }
+        nav .nav-bg { background: linear-gradient(90deg, rgba(255,255,255,0.85), rgba(250,250,252,0.8)); backdrop-filter: blur(6px); }
+        @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+    </style>
+</head>
+<body>
+
+    <div class="page-bg" aria-hidden="true"></div>
+    <div class="page-overlay" aria-hidden="true"></div>
+
+    <div id="app" class="pb-20">
+
+        <!-- Header -->
+        <header class="sticky top-0 z-10">
+            <div class="max-w-md mx-auto p-4 flex justify-between items-center card shadow-md rounded-b-xl" style="background: linear-gradient(90deg, #fffdfa, #f8fbff);">
+                <div>
+                    <h1 class="text-2xl font-bold text-gray-800 site-title">Narita Navigator <span class="ml-1">❄️</span></h1>
+                </div>
+                <div class="text-sm text-[var(--muted)]">Dec 2025</div>
+            </div>
+        </header>
+
+        <main class="max-w-md mx-auto p-4">
+
+            <!-- SCHEDULE TAB -->
+            <div v-if="activeTab === 'schedule'">
+                <h2 class="text-xl font-semibold text-gray-700 mb-4">Your Itinerary</h2>
+                <div v-for="day in itinerary" :key="day.day" class="card rounded-xl shadow-lg p-5 mb-6">
+                    <h3 class="text-lg font-bold text-blue-600 border-b pb-2 mb-3">{{ day.day }}: {{ day.date }}</h3>
+                    <ul>
+                        <li v-for="(event, eIndex) in day.events" :key="day.day + '-' + eIndex" class="flex items-start mb-3">
+                            <span class="bg-blue-100 text-blue-800 text-xs font-semibold mr-3 px-2.5 py-1 rounded-full w-20 text-center">{{ event.time }}</span>
+                            <p class="text-gray-700 flex-1">{{ event.description }}</p>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- MAP TAB -->
+            <div v-if="activeTab === 'map'">
+                <h2 class="text-xl font-semibold text-gray-700 mb-4">📍 Key Locations</h2>
+                <p class="text-gray-600 mb-6">Tap any location to open it in Google Maps!</p>
+                <div class="space-y-3">
+                    <a v-for="loc in locations" :key="loc.name" :href="loc.googleMapsUrl" target="_blank" rel="noopener noreferrer" class="flex items-center card p-4 rounded-xl shadow hover:bg-gray-50 transition-colors" :aria-label="'Open ' + loc.name + ' in Google Maps'">
+                        <span class="text-2xl mr-4">{{ loc.emoji }}</span>
+                        <div>
+                            <p class="font-semibold text-gray-800">{{ loc.name }}</p>
+                            <p class="text-sm text-blue-500">Open in Maps →</p>
+                        </div>
+                    </a>
+                </div>
+            </div>
+
+            <!-- SPENDING TAB -->
+            <div v-if="activeTab === 'spending'">
+                <h2 class="text-xl font-semibold text-gray-700 mb-4">💸 Spending Tracker</h2>
+                <div class="p-6 rounded-xl shadow-lg mb-6 text-white" style="background: linear-gradient(90deg,#7dd3fc,#bfdbfe);">
+                    <p class="text-lg">Total Spent</p>
+                    <p class="text-4xl font-bold">{{ formatCurrency(totalSpending) }}</p>
+                </div>
+                <div class="card p-4 rounded-xl shadow-lg mb-6">
+                    <h3 class="font-semibold mb-2">Add a New Expense</h3>
+                    <div class="flex space-x-2">
+                        <input v-model="newSpendingDescription" type="text" placeholder="e.g., Sushi lunch" class="flex-grow border rounded-lg p-2" aria-label="Spending description">
+                        <input v-model.number="newSpendingAmount" type="number" placeholder="¥1500" class="w-24 border rounded-lg p-2" aria-label="Spending amount">
+                        <button @click="addSpendingItem" class="bg-sky-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-sky-700" aria-label="Add spending">+</button>
+                    </div>
+                    <p v-if="spendingError" class="text-sm text-red-500 mt-2">{{ spendingError }}</p>
+                </div>
+                <div class="space-y-2">
+                    <div v-for="(item, index) in spendingItems" :key="index" class="card p-3 rounded-lg shadow flex justify-between items-center">
+                        <div>
+                            <p class="text-gray-800">{{ item.description }}</p>
+                            <p class="text-sm text-gray-500">{{ formatCurrency(item.amount) }}</p>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <button @click="removeSpendingItem(index)" class="text-sm text-red-500 hover:underline" aria-label="Delete spending item">Delete</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SHOPPING TAB -->
+            <div v-if="activeTab === 'shopping'">
+                <h2 class="text-xl font-semibold text-gray-700 mb-4">🛍️ Shopping List</h2>
+
+                <div class="card p-4 rounded-xl shadow-lg mb-6">
+                    <h3 class="font-semibold mb-2">Add a New Item</h3>
+                    <div class="flex mb-2 space-x-2">
+                        <input v-model="newShoppingItem" @keyup.enter="addShoppingItem" type="text" placeholder="Add a new item..." class="flex-grow border rounded-lg p-2" aria-label="New shopping item">
+                        <button @click="addShoppingItem" class="bg-sky-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-sky-700" aria-label="Add shopping item">Add</button>
+                    </div>
+                    <div class="flex items-center space-x-3">
+                        <label class="flex items-center space-x-2 cursor-pointer">
+                            <input ref="fileInput" @change="onShoppingImageSelected" accept="image/*" type="file" class="hidden" aria-label="Upload an image">
+                            <span class="inline-block bg-white border rounded px-3 py-1 text-sm text-gray-700 shadow-sm">Choose image</span>
+                        </label>
+                        <div v-if="selectedShoppingImageData" class="flex items-center space-x-2">
+                            <img :src="selectedShoppingImageData" class="thumb" alt="preview">
+                            <button @click="clearSelectedImage" class="text-sm text-red-500 hover:underline" aria-label="Remove selected image">Remove</button>
+                        </div>
+                        <p class="text-sm text-gray-500 ml-auto">Max 1 MB</p>
+                    </div>
+                    <p v-if="shoppingError" class="text-sm text-red-500 mt-2">{{ shoppingError }}</p>
+                </div>
+
+                <div class="card rounded-xl shadow-lg p-4">
+                    <ul class="divide-y divide-gray-200">
+                        <li v-for="(item, index) in shoppingList" :key="index" class="py-3 flex items-center">
+                            <div class="flex items-center flex-grow">
+                                <img v-if="item.image" :src="item.image" class="thumb" alt="item image">
+                                <label :class="{'line-through text-gray-400': item.done}" class="ml-3 text-gray-800 flex-grow">{{ item.text }}</label>
+                            </div>
+                            <div class="flex items-center space-x-3">
+                                <input type="checkbox" v-model="item.done" class="h-5 w-5 rounded text-blue-500 border-gray-300 focus:ring-blue-500" :aria-label="'Mark ' + item.text + ' as done'">
+                                <button @click="removeShoppingItem(index)" class="text-sm text-red-500 hover:underline" aria-label="Delete shopping item">Delete</button>
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+        </main>
+
+        <!-- Bottom Navigation -->
+        <nav class="fixed bottom-0 left-0 right-0 bg-transparent max-w-md mx-auto">
+            <div class="flex justify-around nav-bg rounded-t-xl shadow-t-lg">
+                <button @click="activeTab = 'schedule'" :class="{'text-sky-700 border-t-2 border-sky-700': activeTab === 'schedule'}" class="w-full p-4 text-gray-500" aria-label="Schedule tab">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                    <span class="text-xs">Schedule</span>
+                </button>
+                <button @click="activeTab = 'map'" :class="{'text-sky-700 border-t-2 border-sky-700': activeTab === 'map'}" class="w-full p-4 text-gray-500" aria-label="Map tab">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                    <span class="text-xs">Map</span>
+                </button>
+                <button @click="activeTab = 'spending'" :class="{'text-sky-700 border-t-2 border-sky-700': activeTab === 'spending'}" class="w-full p-4 text-gray-500" aria-label="Spending tab">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 8l3 5m0 0l3-5m-3 5v4m0 0H8m4 0h4m-4-8a2 2 0 11-4 0 2 2 0 014 0zM3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>
+                    <span class="text-xs">Spending</span>
+                </button>
+                <button @click="activeTab = 'shopping'" :class="{'text-sky-700 border-t-2 border-sky-700': activeTab === 'shopping'}" class="w-full p-4 text-gray-500" aria-label="Shopping tab">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                    <span class="text-xs">Shopping</span>
+                </button>
+            </div>
+        </nav>
+    </div>
+
+    <!-- Vue App Script -->
+    <script>
+        const { createApp } = Vue
+
+        createApp({
+            data() {
+                return {
+                    activeTab: 'schedule',
+                    itinerary: [
+                        { day: 'Day 1', date: 'Dec 17th', events: [
+                            { time: '06:30', description: '🛬 Arrive at Narita (NRT)!' },
+                            { time: '07:22', description: '🚌 Shuttle to Narita Gateway Hotel' },
+                            { time: '09:18', description: '🛍️ Shuttle to AEON MALL Narita' },
+                            { time: 'All Day', description: 'Shopping: Pharmacy, Daiso, Muji, GU, Uniqlo, Taiyo' },
+                            { time: 'Lunch', description: '🍜 Ramen at Ramen Yamaokaya' },
+                            { time: 'Dinner', description: '🍲 Shabu-Shabu at Dontei' },
+                            { time: '21:05', description: '🚌 Shuttle back to the hotel' },
+                        ]},
+                        { day: 'Day 2', date: 'Dec 18th', events: [
+                            { time: '10:18', description: '🏨 Leave hotel for Narita Station' },
+                            { time: '11:30', description: '🚶‍♂️ Walk down Naritasan Omotesando' },
+                            { time: '12:30', description: '🍣 Sushi lunch at Narita Edokko Sushi' },
+                            { time: '13:00', description: '🚌 Bus to Shisui Premium Outlets' },
+                            { time: '13:30', description: '✨ Shopping at the outlets!' },
+                            { time: '19:35', description: '🚉 Shuttle back to Narita Station' },
+                            { time: '20:50', description: '🏨 Shuttle back to the hotel' },
+                        ]},
+                        { day: 'Day 3', date: 'Dec 19th', events: [
+                            { time: '10:18', description: '🛍️ Last-minute shopping at AEON MALL' },
+                            { time: 'Lunch', description: '🍱 Final lunch at AEON Mall' },
+                            { time: '14:35', description: '🏨 Shuttle back to hotel' },
+                            { time: '15:15', description: '✈️ Shuttle to Narita Airport' },
+                            { time: '18:00', description: '🛫 Flight CX 505 to Hong Kong. Sayonara!' },
+                        ]},
+                    ],
+                    locations: [
+                        { name: 'Narita Gateway Hotel', emoji: '🏨', googleMapsUrl: 'https://www.google.com/maps/search/?api=1&query=Narita+Gateway+Hotel' },
+                        { name: 'AEON MALL Narita', emoji: '🛍️', googleMapsUrl: 'https://www.google.com/maps/search/?api=1&query=AEON+MALL+Narita' },
+                        { name: 'Ramen Yamaokaya', emoji: '🍜', googleMapsUrl: 'https://www.google.com/maps/search/?api=1&query=Ramen+Yamaokaya+Narita' },
+                        { name: 'Dontei Narita', emoji: '🍲', googleMapsUrl: 'https://www.google.com/maps/search/?api=1&query=Dontei+Narita' },
+                        { name: 'Naritasan Omotesando', emoji: '🚶‍♂️', googleMapsUrl: 'https://www.google.com/maps/search/?api=1&query=Naritasan+Omotesando' },
+                        { name: 'Narita Edokko Sushi', emoji: '🍣', googleMapsUrl: 'https://www.google.com/maps/search/?api=1&query=Narita+Edokko+Sushi+Sandōhonten' },
+                        { name: 'Shisui Premium Outlets', emoji: '✨', googleMapsUrl: 'https://www.google.com/maps/search/?api=1&query=Shisui+Premium+Outlets' },
+                        { name: 'Narita Airport (NRT)', emoji: '✈️', googleMapsUrl: 'https://www.google.com/maps/search/?api=1&query=Narita+International+Airport' },
+                    ],
+                    shoppingList: [
+                        { text: 'Japanese KitKat flavors', done: false, image: null },
+                        { text: 'Heattech clothing from Uniqlo', done: false, image: null },
+                        { text: 'Skincare from a pharmacy', done: false, image: null },
+                    ],
+                    newShoppingItem: '',
+                    selectedShoppingImageData: null,
+                    shoppingError: '',
+                    spendingItems: [
+                        { description: 'Ramen Lunch', amount: 1200 },
+                        { description: 'Daiso Haul', amount: 550 },
+                    ],
+                    newSpendingDescription: '',
+                    newSpendingAmount: null,
+                    spendingError: ''
+                }
+            },
+            computed: {
+                totalSpending() { return this.spendingItems.reduce((total, item) => total + Number(item.amount || 0), 0); }
+            },
+            methods: {
+                saveState() {
+                    try { localStorage.setItem('narita.shopping', JSON.stringify(this.shoppingList)); localStorage.setItem('narita.spending', JSON.stringify(this.spendingItems)); }
+                    catch (e) { console.warn('Could not save state', e); }
+                },
+                loadState() {
+                    try { const s = localStorage.getItem('narita.shopping'); const p = localStorage.getItem('narita.spending'); if (s) this.shoppingList = JSON.parse(s); if (p) this.spendingItems = JSON.parse(p); }
+                    catch (e) { console.warn('Could not load state', e); }
+                },
+                addShoppingItem() {
+                    this.shoppingError = '';
+                    const text = (this.newShoppingItem || '').trim();
+                    if (!text) { this.shoppingError = 'Please enter an item name.'; return; }
+                    this.shoppingList.push({ text, done: false, image: this.selectedShoppingImageData || null });
+                    this.newShoppingItem = ''; this.selectedShoppingImageData = null; if (this.$refs && this.$refs.fileInput) this.$refs.fileInput.value = ''; this.saveState();
+                },
+                removeShoppingItem(index) { this.shoppingList.splice(index, 1); this.saveState(); },
+                onShoppingImageSelected(event) {
+                    this.shoppingError = '';
+                    const file = event.target.files && event.target.files[0];
+                    if (!file) return;
+                    if (!file.type.startsWith('image/')) { this.shoppingError = 'Please select an image file.'; event.target.value = ''; return; }
+                    const maxBytes = 1024 * 1024; if (file.size > maxBytes) { this.shoppingError = 'Image too large. Please choose an image under 1 MB.'; event.target.value = ''; return; }
+                    const reader = new FileReader();
+                    reader.onload = (e) => { this.selectedShoppingImageData = e.target.result; };
+                    reader.onerror = () => { this.shoppingError = 'Failed to read image file.'; this.selectedShoppingImageData = null; };
+                    reader.readAsDataURL(file);
+                },
+                clearSelectedImage() { this.selectedShoppingImageData = null; if (this.$refs && this.$refs.fileInput) this.$refs.fileInput.value = ''; },
+                addSpendingItem() {
+                    this.spendingError = '';
+                    const desc = (this.newSpendingDescription || '').trim();
+                    const amt = Number(this.newSpendingAmount);
+                    if (!desc) { this.spendingError = 'Please enter a description.'; return; }
+                    if (!Number.isFinite(amt) || amt < 0) { this.spendingError = 'Please enter a valid amount.'; return; }
+                    this.spendingItems.push({ description: desc, amount: amt });
+                    this.newSpendingDescription = ''; this.newSpendingAmount = null; this.saveState();
+                },
+                removeSpendingItem(index) { this.spendingItems.splice(index, 1); this.saveState(); },
+                formatCurrency(value) { return new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY' }).format(value); }
+            },
+            mounted() { this.loadState(); }
+        }).mount('#app')
+    </script>
+
+</body>
+</html>
